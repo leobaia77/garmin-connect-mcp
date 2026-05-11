@@ -176,3 +176,46 @@ class GarminClientWrapper:
                 raise GarminAPIError(f"Garmin API error: {str(e)}", original_error=e) from e
         except Exception as e:
             raise GarminAPIError(f"Unexpected error: {str(e)}", original_error=e) from e
+
+    def _connectapi(self, path: str, method: str = "GET", **kwargs: Any) -> Any:
+        """Call a Garmin Connect API endpoint that the upstream library does not expose."""
+        try:
+            return self.client.garth.connectapi(path, method=method, **kwargs)
+        except GarminConnectAuthenticationError as e:
+            raise GarminAuthenticationError(original_error=e) from e
+        except GarthHTTPError as e:
+            error_str = str(e)
+            if "429" in error_str or "Too Many Requests" in error_str:
+                raise GarminRateLimitError(original_error=e) from e
+            elif "404" in error_str or "Not Found" in error_str:
+                raise GarminNotFoundError(original_error=e) from e
+            elif "401" in error_str or "403" in error_str or "Unauthorized" in error_str:
+                raise GarminAuthenticationError(original_error=e) from e
+            else:
+                raise GarminAPIError(f"Garmin API error: {str(e)}", original_error=e) from e
+        except Exception as e:
+            raise GarminAPIError(f"Unexpected error: {str(e)}", original_error=e) from e
+
+    def schedule_workout(self, workout_id: int, date: str) -> Any:
+        """Schedule a workout to a specific date on the Garmin calendar.
+
+        Args:
+            workout_id: Garmin workout ID returned from upload_workout.
+            date: Target date in YYYY-MM-DD format (local Garmin calendar date).
+        """
+        return self._connectapi(
+            f"/workout-service/schedule/{workout_id}",
+            method="POST",
+            json={"date": date},
+        )
+
+    def unschedule_workout(self, schedule_id: int) -> Any:
+        """Remove a scheduled workout occurrence from the Garmin calendar.
+
+        Args:
+            schedule_id: The workoutScheduleId returned from schedule_workout.
+        """
+        return self._connectapi(
+            f"/workout-service/schedule/{schedule_id}",
+            method="DELETE",
+        )

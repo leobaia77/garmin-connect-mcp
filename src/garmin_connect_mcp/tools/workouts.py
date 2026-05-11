@@ -1,6 +1,7 @@
 """Workout management tools for Garmin Connect MCP server."""
 
-from typing import Annotated
+import json
+from typing import Annotated, Any
 
 from fastmcp import Context
 
@@ -9,9 +10,26 @@ from ..response_builder import ResponseBuilder
 
 
 async def manage_workouts(
-    action: Annotated[str, "Action: 'list', 'get', 'download', 'upload'"],
-    workout_id: Annotated[int | None, "Workout ID (for get/download actions)"] = None,
-    workout_data: Annotated[str | None, "Workout data (for upload action)"] = None,
+    action: Annotated[
+        str,
+        "Action: 'list', 'get', 'download', 'upload', 'schedule', 'unschedule'",
+    ],
+    workout_id: Annotated[
+        int | None,
+        "Workout ID (for get/download/schedule actions)",
+    ] = None,
+    workout_data: Annotated[
+        str | None,
+        "Workout JSON (for upload action) — Garmin structured-workout payload",
+    ] = None,
+    date: Annotated[
+        str | None,
+        "Target date YYYY-MM-DD (for schedule action)",
+    ] = None,
+    schedule_id: Annotated[
+        int | None,
+        "workoutScheduleId returned from schedule (for unschedule action)",
+    ] = None,
     ctx: Context | None = None,
 ) -> str:
     """
@@ -22,6 +40,8 @@ async def manage_workouts(
     - get: Get specific workout by ID
     - download: Download workout file
     - upload: Upload a new workout
+    - schedule: Schedule an existing workout to a calendar date
+    - unschedule: Remove a scheduled workout from the calendar
     """
     assert ctx is not None
     try:
@@ -73,18 +93,75 @@ async def manage_workouts(
                     ["Provide workout_data parameter"],
                 )
 
-            result = client.safe_call("upload_workout", workout_data)
+            # Accept either a JSON string or a pre-built dict so callers can
+            # pass structured Garmin workout payloads without an extra encode step.
+            payload: Any = workout_data
+            if isinstance(workout_data, str):
+                try:
+                    payload = json.loads(workout_data)
+                except json.JSONDecodeError:
+                    return ResponseBuilder.build_error_response(
+                        "workout_data must be valid JSON",
+                        "invalid_parameters",
+                        ["Provide a JSON string or dict matching Garmin's workout schema"],
+                    )
+
+            result = client.safe_call("upload_workout", payload)
             return ResponseBuilder.build_response(
                 data={"result": result},
                 analysis={"insights": ["Workout uploaded successfully"]},
                 metadata={"action": "upload"},
             )
 
+        elif action == "schedule":
+            if workout_id is None or not date:
+                return ResponseBuilder.build_error_response(
+                    "workout_id and date are required for schedule action",
+                    "invalid_parameters",
+                    [
+                        "Provide workout_id parameter",
+                        "Provide date in YYYY-MM-DD format",
+                    ],
+                )
+
+            result = client.schedule_workout(workout_id, date)
+            return ResponseBuilder.build_response(
+                data={"result": result},
+                analysis={
+                    "insights": [
+                        f"Workout {workout_id} scheduled for {date}",
+                    ],
+                },
+                metadata={
+                    "action": "schedule",
+                    "workout_id": workout_id,
+                    "date": date,
+                },
+            )
+
+        elif action == "unschedule":
+            if schedule_id is None:
+                return ResponseBuilder.build_error_response(
+                    "schedule_id is required for unschedule action",
+                    "invalid_parameters",
+                    ["Provide schedule_id parameter (workoutScheduleId from schedule action)"],
+                )
+
+            result = client.unschedule_workout(schedule_id)
+            return ResponseBuilder.build_response(
+                data={"result": result},
+                analysis={"insights": [f"Schedule {schedule_id} removed"]},
+                metadata={"action": "unschedule", "schedule_id": schedule_id},
+            )
+
         else:
             return ResponseBuilder.build_error_response(
                 f"Invalid action: {action}",
                 "invalid_parameters",
-                ["Valid actions: 'list', 'get', 'download', 'upload'"],
+                [
+                    "Valid actions: 'list', 'get', 'download', 'upload', "
+                    "'schedule', 'unschedule'",
+                ],
             )
 
     except GarminAPIError as e:
