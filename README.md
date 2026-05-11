@@ -6,6 +6,12 @@ A Model Context Protocol (MCP) server for Garmin Connect integration. Access you
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
+> **Fork notes** — This is a fork of [eddmann/garmin-connect-mcp](https://github.com/eddmann/garmin-connect-mcp) that adds two actions to `manage-workouts`:
+> - `schedule` — pin an uploaded workout to a specific date on the Garmin calendar (`workout_id`, `date=YYYY-MM-DD` → returns `workoutScheduleId`).
+> - `unschedule` — remove a scheduled occurrence by `schedule_id`.
+>
+> Garmin's scheduling endpoint isn't wrapped by upstream `python-garminconnect`; the fork adds a thin `garth.connectapi` helper to call it. The upload action also now accepts either a JSON string or a dict so structured workout payloads can be passed without an extra encode step. Everything else matches upstream.
+
 ## Overview
 
 This MCP server provides 22 tools to interact with your Garmin Connect account, organized into 8 categories:
@@ -304,7 +310,7 @@ _Note: List-returning tools use cursor-based pagination with default limits (10 
 
 | Tool                  | Description                                      |
 | --------------------- | ------------------------------------------------ |
-| `manage-workouts`     | Workout management (list, get, download, upload) |
+| `manage-workouts`     | Workout management (list, get, download, upload, schedule, unschedule) |
 | `log-health-data`     | Log body composition, blood pressure, hydration  |
 | `query-womens-health` | Query pregnancy and menstrual cycle data         |
 
